@@ -24,36 +24,52 @@ entity = object:inherit({
     name="unknown",
     x=0,
     y=0,
+    prev_x=0,
+    prev_y=0,
     sprite=0,
     collision=true,
     attacked=false,
-    attacked_no=0,
-    hp=10,
+    max_hp=10,
     ap=2,
     hostile=false,
+    dhp=0,
+    dhp_turn=0,
+    dead=false,
 
     -- constructor
     new = function(self, table)
         local new_entity = self:inherit(table)
+        new_entity["hp"] = new_entity.max_hp
+        new_entity["prev_x"] = new_entity.x
+        new_entity["prev_y"] = new_entity.y
         add(self.entities, new_entity)
         return new_entity
     end,
 
-    -- set hit
-    hit = function(self)
-        self.attacked = true
-        self.attacked_no=no
-    end,
-
     -- update entity
     update = function(self)
-        if (no > self.attacked_no) self.attacked = false
+        if (turn > self.dhp_turn) then
+            self.attacked = false
+            if (self.dead and (turn-self.dhp_turn) > timer_grave) del(entity.entities, self)
+        end
+        if (self.dead) return false
+        return true
     end,
 
     -- draw entity
     draw = function(self)
         if (self.x >= cam_x and self.x < cam_x+16 and self.y >= cam_y and self.y < cam_y+16) then
-            sprite = (self.attacked and frame == 0 and self.sprite) or (self.attacked and frame == 1 and empty) or self.sprite+frame*16
+            sprite = self.sprite+frame*16
+            -- dead
+            if (self.dead) then
+                sprite = sprites.grave
+                if (frame == 1 and (turn - self.dhp_turn) <= 1) sprite = sprites.void
+            -- under attack
+            elseif (self.attacked and frame == 1) then
+                sprite = sprites.void
+                print(self.dhp,8*(self.x-cam_x)+4-str_width(self.dhp)*0.5,8*(self.y-cam_y)+1,self.dhp<0 and 8 or 10)
+            end
+            -- render sprite and overlay
             spr(sprite,8*(self.x-cam_x),8*(self.y-cam_y))
         end
     end,
@@ -69,6 +85,8 @@ entity = object:inherit({
     -- try to move the entity to a given map coordinate
     move = function (self,x,y)
         if not collision(x,y) and x >= 0 and x < width and y >= 0 and y < height and (x ~= 0 or y ~= 0) then
+            self.prev_x = self.x
+            self.prev_y = self.y
             self.x = x
             self.y = y
             return true
@@ -76,23 +94,65 @@ entity = object:inherit({
         return false
     end,
 
+    move_towards_and_attack = function(self, other)
+        if (dist_simp(self,other) <= 1) then
+            self:attack(other)
+        else
+            self:move_towards(other)
+        end
+    end,
+
+    -- try to move an towards another entity
+    move_towards = function(self, other)
+        diff_x = other.x - self.x
+        diff_y = other.y - self.y
+        desire_x = (diff_x > 0 and 1) or (diff_x < 0 and -1) or 0
+        desire_y = (diff_y > 0 and 1) or (diff_y < 0 and -1) or 0
+        valid = ((abs(diff_x) < abs(diff_y)) and self:move(self.x,self.y+desire_y) or (self:move(self.x+desire_x,self.y) or self:move(self.x,self.y+desire_y)))
+    end,
+
+    -- follow another entity
+    follow = function(self, other)
+        if (dist_simp_xy(self.x,self.y,other.prev_x,other.prev_y) == 1) then
+            self:move(other.prev_x,other.prev_y)
+        else
+            self:move_towards(other)
+        end
+    end,
+
     -- perform attack
     attack = function(self, other)
         if(self == player or other == player) log:add(self.name .. " attacked " .. other.name)
-        other.hp-=flr(self.ap*(0.5+rnd())+0.5)
-        other:hit()
-        if (other.hp <= 0) then 
-            if(self == player) then
-                log:add(self.name .. " killed " .. other.name)
-                self.xp+=other.xp
-            end
-            del(entity.entities, other)
+        if (other:take_dmg(flr(self.ap*(0.5+rnd())+0.5))) then
+            log:add(self.name .. " killed " .. other.name)
+            if (self == player) self.xp+=other.xp
         end
+    end,
+
+    -- take damage
+    take_dmg = function(self,dmg)
+        if(self == player) ui:flash()
+        self.attacked = true
+        self.dhp_turn=turn
+        self.dhp=dmg*-1
+        self.hp-=dmg
+        if (self.hp <= 0) then
+            self:kill()
+            return true
+        end
+        return false
+    end,
+
+    -- kill entity
+    kill = function(self)
+        self.dead = true
+        self.collision = false
+        if (self == player) state = state_dead
     end,
 
     -- spawn entity on map
     spawn = function(sprite,x,y)
-        mset(x,y,empty)
+        mset(x,y,sprites.empty)
         -- get entity data
         entity_data = data.entities[sprite]
         if (entity_data ~= nil) then
@@ -101,6 +161,11 @@ entity = object:inherit({
                 player.x=x
                 player.y=y
                 player.sprite=sprite
+                -- spawn player pet
+                pet_sprite = (rnd() > 0.5 and sprites.pet_cat) or (sprites.pet_dog)
+                pet_table = {x=x-1,y=y,sprite=pet_sprite}
+                tbl_merge(pet_table,data.entities[pet_sprite])
+                pet:new(pet_table)
             else
                 -- set up data table
                 table = {x=x,y=y,sprite=sprite}
@@ -134,16 +199,6 @@ player = entity:new({
     class="player",
     name="you",
     xp=0,
-    -- handle input
-    input = function(self)
-        valid = false
-        if (btnp(⬆️)) valid = self:action_dir(self.x,self.y-1)
-        if (btnp(➡️)) valid = self:action_dir(self.x+1,self.y)
-        if (btnp(⬇️)) valid = self:action_dir(self.x,self.y+1)
-        if (btnp(⬅️)) valid = self:action_dir(self.x-1,self.y)
-        if (btnp(🅾️)) valid = self:action_wait()
-        return valid
-    end,
 
     -- move the player or attack if enemy in target tile
     action_dir = function(self, x,y)
@@ -176,6 +231,14 @@ player = entity:new({
 
 pet = entity:inherit({
     class="pet",
+    collision=false,
+
+    -- update function
+    update = function(self)
+        if entity.update(self) then
+            self:follow(player)
+        end
+    end
 })
 
 
@@ -185,6 +248,12 @@ pet = entity:inherit({
 
 npc = entity:inherit({
     class="npc",
+
+    -- update function
+    update = function(self)
+        if entity.update(self) then
+        end
+    end
 })
 
 
@@ -196,28 +265,16 @@ enemy = entity:inherit({
     class="enemy",
     hostile = true,
     ap = 1,
-    hp = 5,
+    max_hp = 5,
     xp=1,
 
     -- update function
     update = function(self)
-        entity.update(self)
-        if (self.hostile) then
-            if (dist_simp(self,player) <= 1) then
-                self:attack(player)
-            else
-                self:move_towards(player)
+        if entity.update(self) then
+            if (self.hostile) then
+                self:move_towards_and_attack(player)
             end
         end
-    end,
-
-    -- try to move an towards another entity
-    move_towards = function(self, other)
-        diff_x = other.x - self.x
-        diff_y = other.y - self.y
-        desire_x = (diff_x > 0 and 1) or (diff_x < 0 and -1) or 0
-        desire_y = (diff_y > 0 and 1) or (diff_y < 0 and -1) or 0
-        valid = ((abs(diff_x) < abs(diff_y)) and self:move(self.x,self.y+desire_y) or (self:move(self.x+desire_x,self.y) or self:move(self.x,self.y+desire_y)))
     end,
 })
 
