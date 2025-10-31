@@ -3,6 +3,7 @@
 -------------------------------------------------------------------------------
 
 object = {
+
     -- metatable setup
     inherit = function(self, table)
         table=table or {}
@@ -11,7 +12,9 @@ object = {
         })
         return table
     end,
+
 }
+
 
 
 -------------------------------------------------------------------------------
@@ -19,30 +22,24 @@ object = {
 -------------------------------------------------------------------------------
 
 entity = object:inherit({
+    
+    -- static vars
     class="entity",
     entities={},
     num=0,
+
+    -- vars
     name="unknown",
     x=0,
     y=0,
-    prev_x=0,
-    prev_y=0,
     sprite=0,
     collision=true,
-    attacked=false,
-    max_hp=10,
-    ap=2,
-    hostile=false,
-    dhp=0,
-    dhp_turn=0,
-    dead=false,
 
     -- constructor
     new = function(self, table)
         local new_entity = self:inherit(table)
         entity.num=entity.num+1
         new_entity["id"] = entity.num
-        new_entity["hp"] = new_entity.max_hp
         new_entity["prev_x"] = new_entity.x
         new_entity["prev_y"] = new_entity.y
         add(self.entities, new_entity)
@@ -51,11 +48,6 @@ entity = object:inherit({
 
     -- update entity
     update = function(self)
-        if (turn > self.dhp_turn) then
-            self.attacked = false
-            if (self.dead and (turn-self.dhp_turn) > timer_grave) del(entity.entities, self)
-        end
-        return (not self.dead and self:in_frame())
     end,
 
     -- check if entity is on screen
@@ -64,6 +56,106 @@ entity = object:inherit({
     end,
 
     -- draw entity
+    draw = function(self)
+        if (self:in_frame()) then
+            sprite = self.sprite
+            spr(sprite,pos_to_screen(self).x,pos_to_screen(self).y)
+        end
+    end,
+
+    -- get entity at coordinate
+    get = function(x,y)
+        for e in all(entity.entities) do
+            if (e.x == x and e.y == y) return e
+        end
+        return nil
+    end,
+
+    -- spawn entity on map
+    spawn = function(sprite,x,y)
+        mset(x,y,sprites.empty)
+        -- get entity data
+        entity_data = data.entities[sprite]
+        if (entity_data ~= nil) then
+            -- set up player
+            if (entity_data.class == player.class) then
+                player.x=x
+                player.y=y
+                player.sprite=sprite
+                -- spawn player pet
+                pet_sprite = (rnd() > 0.5 and sprites.pet_cat) or (sprites.pet_dog)
+                pet_table = {x=x-1,y=y,sprite=pet_sprite}
+                tbl_merge(pet_table,data.entities[pet_sprite])
+                pet:new(pet_table)
+            else
+                -- set up data table
+                table = {x=x,y=y,sprite=sprite}
+                -- add data to table
+                tbl_merge(table,entity_data)
+                -- create new entity of given class
+                if (table.class == pet.class) then
+                    pet:new(table)
+                elseif (table.class == npc.class) then 
+                    npc:new(table)
+                elseif (table.class == enemy.class) then 
+                    enemy:new(table)
+                elseif (table.class == sign.class) then
+                    for e in all(data.signs) do 
+                        if (e.x==x and e.y==y) then 
+                            table.message=e.message 
+                            break
+                        end
+                    end
+                    sign:new(table)
+                elseif (table.class == door.class) then
+                    door:new(table)
+                elseif (table.class == item.class) then 
+                    item:new(table)
+                else
+                    entity:new(table)
+                end
+            end
+        end
+    end,
+})
+
+
+
+-------------------------------------------------------------------------------
+-- creature
+-------------------------------------------------------------------------------
+
+creature = entity:inherit({
+    
+    -- static vars
+    class="creature",
+
+    -- vars
+    hostile=false,
+    attacked=false,
+    dead=false,
+    dhp=0,
+    dhp_turn=0,
+    ap=2,
+    max_hp=10,
+
+    -- constructor
+    new = function(self, table)
+        local new_entity = entity.new(self, table)
+        new_entity["hp"] = new_entity.max_hp
+        return new_entity
+    end,
+
+    -- update creature
+    update = function(self)
+        if (turn > self.dhp_turn) then
+            self.attacked = false
+            if (self.dead and (turn-self.dhp_turn) > timer_grave) del(entity.entities, self)
+        end
+        return (not self.dead and self:in_frame())
+    end,
+
+    -- draw creature
     draw = function(self)
         if (self:in_frame()) then
             sprite = self.sprite+frame*16
@@ -81,12 +173,11 @@ entity = object:inherit({
         end
     end,
 
-    -- get entity at coordinate
-    get = function(x,y)
-        for e in all(entity.entities) do
-            if (e.x == x and e.y == y) return e
-        end
-        return nil
+    -- kill creature
+    kill = function(self)
+        self.dead = true
+        self.collision = false
+        if (self == player) state = state_dead
     end,
 
     -- try to move the entity to a given map coordinate
@@ -149,61 +240,20 @@ entity = object:inherit({
         end
         return false
     end,
-
-    -- kill entity
-    kill = function(self)
-        self.dead = true
-        self.collision = false
-        if (self == player) state = state_dead
-    end,
-
-    -- spawn entity on map
-    spawn = function(sprite,x,y)
-        mset(x,y,sprites.empty)
-        -- get entity data
-        entity_data = data.entities[sprite]
-        if (entity_data ~= nil) then
-            -- set up player
-            if (entity_data.class == player.class) then
-                player.x=x
-                player.y=y
-                player.sprite=sprite
-                -- spawn player pet
-                pet_sprite = (rnd() > 0.5 and sprites.pet_cat) or (sprites.pet_dog)
-                pet_table = {x=x-1,y=y,sprite=pet_sprite}
-                tbl_merge(pet_table,data.entities[pet_sprite])
-                pet:new(pet_table)
-            else
-                -- set up data table
-                table = {x=x,y=y,sprite=sprite}
-                -- add data to table
-                tbl_merge(table,entity_data)
-                -- create new entity of given class
-                if (table.class == pet.class) then
-                    pet:new(table)
-                elseif (table.class == npc.class) then 
-                    npc:new(table)
-                elseif (table.class == enemy.class) then 
-                    enemy:new(table)
-                elseif (table.class == interactable.class) then
-                    interactable:new(table)
-                elseif (table.class == item.class) then 
-                    item:new(table)
-                else
-                    entity:new(table)
-                end
-            end
-        end
-    end,
 })
+
 
 
 -------------------------------------------------------------------------------
 -- player
 -------------------------------------------------------------------------------
 
-player = entity:new({
+player = creature:new({
+
+    -- static vars
     class="player",
+
+    -- vars
     name="you",
     xp=0,
 
@@ -213,9 +263,8 @@ player = entity:new({
             log:add("you moved")
             return true
         else
-            e = entity.get(x,y)
-            if (e ~= nil) then
-                if (e.hostile) then
+            for e in all(entity.entities) do 
+                if (e.hostile and e.x==x and e.y==y) then
                     self:attack(e)
                     return true
                 end
@@ -232,52 +281,63 @@ player = entity:new({
 })
 
 
+
 -------------------------------------------------------------------------------
 -- pet
 -------------------------------------------------------------------------------
 
-pet = entity:inherit({
+pet = creature:inherit({
+
+    -- static vars
     class="pet",
     collision=false,
 
     -- update function
     update = function(self)
-        if entity.update(self) then
+        if creature.update(self) then
             self:follow(player)
         end
     end
 })
 
 
+
 -------------------------------------------------------------------------------
 -- npc
 -------------------------------------------------------------------------------
 
-npc = entity:inherit({
+npc = creature:inherit({
+
+    -- static vars
     class="npc",
 
     -- update function
     update = function(self)
-        if entity.update(self) then
+        if creature.update(self) then
         end
     end
 })
+
 
 
 -------------------------------------------------------------------------------
 -- enemy
 -------------------------------------------------------------------------------
 
-enemy = entity:inherit({
+enemy = creature:inherit({
+
+    -- static vars
     class="enemy",
     hostile = true,
+
+    -- vars
     ap = 1,
     max_hp = 5,
     xp=1,
 
     -- update function
     update = function(self)
-        if entity.update(self) then
+        if creature.update(self) then
             if (self.hostile) then
                 self:move_towards_and_attack(player)
             end
@@ -286,13 +346,43 @@ enemy = entity:inherit({
 })
 
 
+
 -------------------------------------------------------------------------------
--- interactable
+-- sign
 -------------------------------------------------------------------------------
 
-interactable = entity:inherit({
-    class="interactable",
+sign = entity:inherit({
+
+    -- static vars
+    class="sign",
+
+    --vars
+    message="...",
+
+    interact = function(self)
+        change_state(state_read)
+        sel.read.text=self.message
+    end,
+
 })
+
+
+-------------------------------------------------------------------------------
+-- door
+-------------------------------------------------------------------------------
+
+door = entity:inherit({
+
+    -- static vars
+    class="door",
+
+    interact = function(self)
+        self.collision = not self.collision
+        self.sprite = self.collision and 82 or 81
+    end,
+
+})
+
 
 
 -------------------------------------------------------------------------------
@@ -300,5 +390,9 @@ interactable = entity:inherit({
 -------------------------------------------------------------------------------
 
 item = entity:inherit({
+
+    -- static vars
     class="item",
+    collision=false,
+
 })
