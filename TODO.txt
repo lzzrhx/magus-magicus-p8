@@ -1,0 +1,24 @@
+-------------------------------------------------------------------------------
+-- todo
+-------------------------------------------------------------------------------
+-- entities, change black transparancy to other color
+-- inventory screen -> names and interact (use/equip)
+-- locked doors and keys
+-- chests
+-- equipable items
+-- health potion
+-- ranged combat
+-- talk to npcs
+-- action menu -> wait / magic / ranged
+-- intro screen / main menu
+-- make stairs work
+-- plan: character stats
+    -- movement speed
+-- plan: scrolls
+-- plan: rings
+-- plan: other potions
+-- plan: magic system
+-- (?) food and hunger
+-- (?) field of view (shadowcasting)
+-- (?) pathfinding (a-star)
+-- (?) score system
