@@ -69,7 +69,9 @@ entity=object:inherit({
       if(self.color_swap_enable)pal(self.color_swap)
       spr(self.sprite,pos_to_screen(self).x,pos_to_screen(self).y)
       if(self.color_swap_enable)pal()
+      return true
     end
+    return false
   end,
 
   -- interact with entity
@@ -163,6 +165,7 @@ creature=entity:inherit({
   -- draw creature
   draw=function(self)
     if (self:in_frame()) then
+      if(self.color_swap_enable)pal(self.color_swap)
       sprite=self.sprite+frame*16
       if (self.anim_frame<=0) then
         if (self.dead) then sprite=((frame==1 and (turn-self.dhp_turn)<=1 and self.blink_delay<=0 and not creature.anim_playing) and sprites.void) or sprites.grave
@@ -177,7 +180,9 @@ creature=entity:inherit({
       end
       spr(sprite,pos_to_screen(self).x+self.anim_x,pos_to_screen(self).y+self.anim_y)
       pal()
+      return true
     end
+    return false
   end,
 
   -- perform turn actions
@@ -422,7 +427,7 @@ door=entity:inherit({
   -- interact action
   interact=function(self)
     self.collision=not self.collision
-    self.sprite=(self.collision and 82) or 81
+    self.sprite=(self.collision and sprites.door_closed) or sprites.door_open
     if (self.lock>0) then
       self.lock=0
       self.color_swap_enable=false
@@ -495,11 +500,45 @@ chest=entity:inherit({
   parent_class=entity.class,
   interact_text="open",
 
+  -- vars
+  anim_frame=0,
+  play_anim=false,
+  open=false,
+  content={},
+
   -- interact action
   interact = function(self)
-    -- TODO: implement this
     msg.add("opened chest")
-    change_state(state_game)
+    self.open=true
+    self.sprite=sprites.chest_open
+    self.anim_frame=45
+    self.content=inventory.items
+    self.play_anim=true
+    sel.chest.entity=self
+    change_state(state_chest)
+  end,
+
+  -- perform animation step
+  anim_step=function(self) if(self.anim_frame>0)self.anim_frame-=1 end,
+
+  -- get content item animation position
+  item_anim_pos=function(self, anim_pos, target) return {x=interp(anim_pos+sin(anim_pos*-0.5)*0.75,pos_to_screen(self).x,target.x),y=interp(anim_pos+cos(anim_pos*0.9+0.1)*0.3-0.3,pos_to_screen(self).y,target.y)} end,
+
+  -- draw chest
+  draw=function(self)
+    if (entity.draw(self) and (self.play_anim)) then
+      x=pos_to_screen(self).x
+      y=pos_to_screen(self).y
+      draw_lid=true
+      if(self.anim_frame<30)draw_lid=(self.anim_frame>10 and blink) or false
+      if(blink)rectfill(x+1,y+2,x+5,y+3,7)
+      if(draw_lid) then
+        y-=(45-self.anim_frame)*0.25
+        clip(x,y,8,5)
+        spr(sprites.chest_closed,x,y)
+        clip()
+      end
+    end
   end,
 
 })

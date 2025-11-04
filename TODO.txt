@@ -1,9 +1,11 @@
 -------------------------------------------------------------------------------
 -- todo
 -------------------------------------------------------------------------------
--- chests
+-- chests / golden chest / mimic chest
+-- animation when opening chest
+-- transition fades between scenes/when going on stairs (dithered)
 -- inventory sorting (by class and alphabet)
--- equipable items
+-- equippable items
 -- sword, dagger, bow (equipable items)
 -- consumable items
 -- health potion (consumable item)
@@ -14,14 +16,16 @@
 -- add mouse support
 -- debug menu
 -- make stairs work
+-- palette swapping on enemies
 -- plan: character stats
     -- xp and levels
     -- movement speed
     -- (enemy) attack distance (1 or 2 tiles)
 -- plan: scrolls
 -- plan: rings
--- plan: other potions
+-- plan: potions
 -- plan: magic system
+-- (?) portals (teleport)
 -- (?) randomly generated dungeons (underworld)
 -- (?) food and hunger
 -- (?) field of view (shadowcasting)

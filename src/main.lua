@@ -17,17 +17,19 @@ prev_frame=0 -- previous animation frame
 cam_x=0 -- camera x position
 cam_y=0 -- camera y position
 cam_offset=4 -- camera scroll offset
+blink_frame=0
 
 -- game states
 state_reset="reset"
 state_game="game"
 state_menu="menu"
 state_look="look"
+state_chest="chest"
 state_read="read"
 state_dead="dead"
 
 -- selection
-sel={menu={},look={},read={},dead=0,}
+sel={menu={},look={},chest={},read={},dead=0,}
 
 -- sprites
 sprites={
@@ -35,8 +37,12 @@ sprites={
   empty=1,
   selection=2,
   grave=3,
+  chest_closed=11,
+  chest_open=12,
   companion_cat=17,
   companion_dog=18,
+  door_closed=82,
+  door_open=81,
 }
 
 -- flags
@@ -71,6 +77,8 @@ function _update()
   if(state==state_reset)then
     run()
   else
+    blink_frame=(blink_frame+1)%2
+    blink=blink_frame%2==0
     prev_frame=frame
     frame=flr(t()*2%2)
     update[state]()
@@ -104,7 +112,13 @@ init={
   look=function()
     sel.look.x=player.x
     sel.look.y=player.y
-    change_look()
+    set_look()
+  end,
+
+  -- chest state
+  chest=function()
+    sel.chest.anim_frame={}
+    for itm in all(sel.chest.entity.content) do add(sel.chest.anim_frame,60) end
   end,
 
   -- read state
@@ -130,7 +144,10 @@ update={
   menu=function() input.menu() end,
 
   -- look state
-  look=function() if(input.look())change_look() end,
+  look=function() if(input.look())set_look() end,
+
+  -- chest state
+  chest=function() if(sel.chest.entity.play_anim)sel.chest.entity:anim_step() end,
 
   -- read state
   read=function() input.read() end,
@@ -149,21 +166,18 @@ draw={
   flash_n=0,
   flash_step=function()
     if(not options.disable_flash and draw.flash_n>0)then
-      cls((player.hp<5 and draw.flash_n==1 and 8) or 7)
+      cls((state==state_game and player.hp<5 and draw.flash_n==1 and 8) or 7)
       draw.flash_n-=1
     end
   end,
 
-  -- shadow overlay
-  shadow=function()
+  -- monochrome mode
+  monochrome=function(c)
+    c=c or 1
     -- screen memory as the sprite sheet
     poke(0x5f54,0x60)
-    -- set overlay palette
-    pal(split'0,1,1,1,1,1,1,1,1,1,1,1,1,1,1')
-    -- draw sprite sheet to screen
-    -- sprite sheet x / sprite sheet y / width / height / screen x / screen y
-    sspr(unpack(split"0,0,128,128,0,0"))  
-    -- reset palette
+    pal({0,c,c,c,c,c,c,c,c,c,c,c,c,c,c})
+    sspr(0,0,128,128,0,0)
     pal()
     -- reset spritesheet
     poke(0x5f54,0x00)
@@ -220,7 +234,7 @@ draw={
   menu=function()
     -- draw map and entities
     draw.game()
-    draw.shadow()
+    draw.monochrome()
     -- vars
     s_btn="cancel 🅾️  select ❎"
     s_chr="⬅️ character ➡️"
@@ -256,10 +270,10 @@ draw={
   look=function()
     -- draw map, entities and selection
     draw.game()
-    if(state==state_look)draw.shadow()
+    if(state==state_look)draw.monochrome()
     player:draw()
     if(sel.look.entity~=nil)sel.look.entity:draw()
-    spr(sprites.selection,pos_to_screen(sel.look).x,pos_to_screen(sel.look).y)
+    if(state==state_look)spr(sprites.selection,pos_to_screen(sel.look).x,pos_to_screen(sel.look).y)
     draw.window_frame()
     -- vars
     s_z="cancel 🅾️"
@@ -278,11 +292,43 @@ draw={
     if(sel.look.usable)print(s_x,126-str_width(s_x),120,6)
   end,
 
+  -- chest state
+  chest=function()
+    -- draw map, entities and selection
+    cls()
+    player:draw()
+    sel.chest.entity:draw()
+    -- vars
+    s_x="take items ❎"
+    if (sel.chest.entity.anim_frame<=0) then
+      num=tbl_len(sel.chest.entity.content)
+      for i=1,num do
+        target={x=68-num*8+(i-1)*16,y=52}
+        if (i==1 or sel.chest.anim_frame[i-1]<=0) then
+          if (sel.chest.anim_frame[i]>0) then
+            if(i==num)sel.chest.entity.play_anim=false
+            pal({0,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7})
+            for j=0,10 do
+              pos=sel.chest.entity:item_anim_pos(smoothstep(min(1,(1-(sel.chest.anim_frame[i]/60))+0.025*j)),target)
+              if(blink)spr(sel.chest.entity.content[i].sprite,pos.x,pos.y)
+            end
+            pal()
+            sel.chest.anim_frame[i]-=1
+          else
+            if(sel.chest.anim_frame[num]<=0 or blink)spr(sel.chest.entity.content[i].sprite,target.x,target.y)
+          end
+        end
+      end
+      print(s_x,64-str_width(s_x)*0.5,52+17,5)
+      print(s_x,64-str_width(s_x)*0.5,52+16,6)
+    end
+  end,
+
   -- read state
   read=function()
     -- draw map, entities and selection
     draw.look()
-    draw.shadow()
+    draw.monochrome()
     -- vars
     s_x="continue ❎"
     s_txt=sel.read.text
@@ -296,7 +342,7 @@ draw={
     line(24,72+exp,102,72+exp,sel.read.bg)
     print(s_txt,64-w*0.5,41-exp+s_off,sel.read.fg)
     -- button legend
-    print(s_x,64-str_width(s_x)*0.5,81+exp+1,5)
+    print(s_x,64-str_width(s_x)*0.5,82+exp,5)
     print(s_x,64-str_width(s_x)*0.5,81+exp,6)
   end,
 
@@ -304,7 +350,7 @@ draw={
   dead=function()
     -- draw map, entities and selection
     draw.game()
-    draw.shadow()
+    draw.monochrome()
     -- vars
     s="g a m e   o v e r"
     s_x="select ❎"
@@ -489,6 +535,10 @@ function smoothstep(x)
     return x*x/(2*x*x-2*x+1);
 end
 
+-- linear interpolation
+function interp(val,min,max)
+  return (max-min)*val+min
+end
 
 
 -------------------------------------------------------------------------------
@@ -572,7 +622,7 @@ end
 -------------------------------------------------------------------------------
 
 -- change look target
-function change_look()
+function set_look()
   e=entity.get(sel.look.x,sel.look.y)
   tbl=sel.look
   tbl.entity=(e~=player and e) or nil
@@ -589,7 +639,9 @@ function change_look()
       tbl.usable=e.interactable and dist(player,e)<=e.interact_dist
       tbl.color=6
       tbl.text=e.interact_text
-      if(e.class==door.class) then 
+      if(e.class==chest.class) then
+        tbl.usable=tbl.usable and not e.open
+      elseif(e.class==door.class) then 
         if (e.lock==0) then
           tbl.text=(e.collision and "open") or "close"
         else
