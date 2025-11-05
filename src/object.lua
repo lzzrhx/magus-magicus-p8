@@ -18,30 +18,62 @@ object={
 
 
 -------------------------------------------------------------------------------
+-- drawable
+-------------------------------------------------------------------------------
+drawable=object:inherit({
+  -- static vars
+  class="drawable",
+  parent_class=object.class,
+
+  -- vars
+  sprite=0,
+  flash_n=0,
+  color_swap={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16},
+  color_swap_enable=false,
+
+  -- (static) get drawable data from entity data
+  data_from_entity=function(e)
+    return {sprite=e.sprite or drawable.sprite, color_swap=e.color_swap or drawable.color_swap, color_swap_enable=e.color_swap_enable or drawable.color_swap_enable}
+  end,
+
+  -- draw at given screen position
+  spr=function(self,sprite,x,y)
+    if (self.flash_n>0) then
+      self.flash_n-=1
+      pal({0,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7})
+    elseif (self.color_swap_enable) then
+      pal(self.color_swap)
+    end
+    spr(sprite,x,y)
+    pal()
+  end,
+})
+
+
+
+-------------------------------------------------------------------------------
 -- entity
 -------------------------------------------------------------------------------
-entity=object:inherit({
+entity=drawable:inherit({
   -- static vars
   class="entity",
-  parent_class=object.class,
+  parent_class=drawable.class,
   entities={},
   num=0,
 
   -- vars
   name=nil,
-  sprite=0,
+
   x=0,
   y=0,
   collision=true,
   interactable=true,
   interact_dist=1,
   interact_text="interact",
-  color_swap={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16},
-  color_swap_enable=false,
 
-  -- get name or class name
-  get_name=function(self)
-    return(self.name~=nil and self.name) or (self.item_class~=nil and self.item_class) or self.class
+  -- (static) get name or class name of any entity
+  static_get_name=function(e)
+    return(e.name~=nil and e.name) or (e.item_class~=nil and e.item_class) or e.class
   end,
 
   -- constructor
@@ -63,15 +95,18 @@ entity=object:inherit({
   -- update entity
   update=function(self) end,
 
-  -- draw entity
+  -- draw entity at world position (if in frame)
   draw=function(self)
     if (self:in_frame()) then
-      if(self.color_swap_enable)pal(self.color_swap)
-      spr(self.sprite,pos_to_screen(self).x,pos_to_screen(self).y)
-      if(self.color_swap_enable)pal()
+      self:spr(self.sprite,pos_to_screen(self).x,pos_to_screen(self).y)
       return true
     end
     return false
+  end,
+
+  -- get name or class name of this entity
+  get_name=function(self)
+    return entity.static_get_name(self)
   end,
 
   -- interact with entity
@@ -101,15 +136,7 @@ entity=object:inherit({
         companion:new(tbl_merge_new({x=x,y=y,sprite=companion_sprite},data_entities[companion_sprite]))
       else
         tbl_merge(tbl,entity_data)
-        if(tbl.class==companion.class)then companion:new(tbl)
-        elseif(tbl.class==npc.class)then npc:new(tbl)
-        elseif(tbl.class==enemy.class)then enemy:new(tbl)
-        elseif(tbl.class==sign.class)then sign:new(tbl)
-        elseif(tbl.class==chest.class)then chest:new(tbl)
-        elseif(tbl.class==stairs.class)then stairs:new(tbl)
-        elseif(tbl.class==door.class)then door:new(tbl)
-        elseif(tbl.class==item.class)then item:new(tbl)
-        else entity:new(tbl) end
+        _ENV[tbl.class]:new(tbl)
       end
     end
   end,
@@ -133,7 +160,6 @@ creature=entity:inherit({
   hostile=false,
   attacked=false,
   blink_delay=0,
-  flash_n=0,
   anim=nil,
   anim_frame=0,
   anim_x=0,
@@ -165,7 +191,6 @@ creature=entity:inherit({
   -- draw creature
   draw=function(self)
     if (self:in_frame()) then
-      if(self.color_swap_enable)pal(self.color_swap)
       sprite=self.sprite+frame*16
       if (self.anim_frame<=0) then
         if (self.dead) then sprite=((frame==1 and (turn-self.dhp_turn)<=1 and self.blink_delay<=0 and not creature.anim_playing) and sprites.void) or sprites.grave
@@ -174,12 +199,7 @@ creature=entity:inherit({
           if(state==state_game)print(abs(self.dhp),pos_to_screen(self).x+self.anim_x+4-str_width(abs(self.dhp))*0.5,pos_to_screen(self).y+self.anim_y+1,self.dhp<0 and 8 or 11)
         end
       end
-      if (self.flash_n>0) then
-        self.flash_n-=1
-        pal({0,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7})
-      end
-      spr(sprite,pos_to_screen(self).x+self.anim_x,pos_to_screen(self).y+self.anim_y)
-      pal()
+      self:spr(sprite,pos_to_screen(self).x+self.anim_x,pos_to_screen(self).y+self.anim_y)
       return true
     end
     return false
@@ -418,7 +438,7 @@ door=entity:inherit({
       tbl["name"]="locked door"
       if (tbl.lock>0) then
         for d in all(data_locks.doors) do if(d.x==tbl.x and d.y==tbl.y)then tbl.lock=d.lock or 1 break end end
-        key.set_color_swap(tbl,tbl.lock)
+        key.set_variant(tbl,tbl.lock)
       end
     end
     return entity.new(self,tbl)
@@ -499,6 +519,7 @@ chest=entity:inherit({
   class="chest",
   parent_class=entity.class,
   interact_text="open",
+  anim_playing=false,
 
   -- vars
   anim_frame=0,
@@ -506,15 +527,36 @@ chest=entity:inherit({
   open=false,
   content={},
 
+  -- constructor
+  new=function(self,tbl)
+    for d in all(data_chests) do
+      if (d.x==tbl.x and d.y==tbl.y) then
+        tbl.content={}
+        for itm in all(d.content) do
+          e_data=tbl_merge_new(data_entities[itm.sprite],itm)
+          if(e_data.item_class==key.class)key.set_variant(e_data,e_data.item_data.lock)
+          add(tbl.content,possession.new_from_entity(e_data))
+        end
+        return entity.new(self,tbl)
+      end 
+    end
+    return nil
+  end,
+
   -- interact action
   interact = function(self)
-    msg.add("opened chest")
     self.open=true
     self.sprite=sprites.chest_open
     self.anim_frame=45
-    self.content=inventory.items
     self.play_anim=true
+    chest.anim_playing=true
     sel.chest.entity=self
+    sel.chest.anim_frame={}
+    for itm in all(self.content) do 
+      add(sel.chest.anim_frame,60)
+      inventory.add_possession(itm)
+      msg.add("got "..itm.name)
+    end
     change_state(state_chest)
   end,
 
@@ -535,7 +577,7 @@ chest=entity:inherit({
       if(draw_lid) then
         y-=(45-self.anim_frame)*0.25
         clip(x,y,8,5)
-        spr(sprites.chest_closed,x,y)
+        self:spr(sprites.chest_closed,x,y)
         clip()
       end
     end
@@ -558,18 +600,14 @@ item = entity:inherit({
   -- constructor
   new=function(self,tbl)
     tbl.item_data=tbl.item_data~=nil and tbl_copy(tbl.item_data) or {}
-    if (tbl.item_class==key.class) then 
-      for d in all(data_locks.keys) do if(d.x==tbl.x and d.y==tbl.y)then tbl.item_data["lock"]=d.lock or 1 break end end 
-      if (tbl.item_data.lock>1)key.set_color_swap(tbl,tbl.item_data.lock)
-      tbl.name=key.colors[tbl.item_data.lock][1].." key"
-    end
+    if(tbl.item_class==key.class)key.get_data(tbl)
     return entity.new(self,tbl)
   end,
 
   -- interact action
   interact=function(self)
     msg.add("picked up "..self:get_name())
-    inventory.add(self)
+    inventory.add_item(self)
     self:destroy()
     change_state(state_game)
   end,
@@ -581,10 +619,10 @@ item = entity:inherit({
 -------------------------------------------------------------------------------
 -- possession (item in inventory)
 -------------------------------------------------------------------------------
-possession=object:inherit({
+possession=drawable:inherit({
   -- static vars
   class="possession",
-  parent_class=object.class,
+  parent_class=drawable.class,
   num=0,
 
   -- vars
@@ -598,6 +636,11 @@ possession=object:inherit({
     possession.num=possession.num+1
     itm["id"]=possession.num
     return itm
+  end,
+
+  -- create new possession from data
+  new_from_entity=function(e)
+    return _ENV[e.item_class]:new(tbl_merge_new(tbl_merge_new({name=entity.static_get_name(e)},drawable.data_from_entity(e)),e.item_data))
   end,
 
   -- interact with possession
@@ -619,9 +662,21 @@ key=possession:inherit({
     {"gold",10,9},
     {"green",11,3},
   },
-  set_color_swap=function(tbl,i)
-    tbl["color_swap_enable"]=true
-    tbl["color_swap"]={[key.colors[1][2]]=key.colors[i][2],[key.colors[1][3]]=key.colors[i][3]}
+
+  -- lookup key data for a given map coordinate
+  get_data=function(tbl)
+    for d in all(data_locks.keys) do if(d.x==tbl.x and d.y==tbl.y)then tbl.item_data["lock"]=d.lock or 1 break end end 
+    key.set_variant(tbl,tbl.item_data.lock)
+    
+  end,
+
+  -- set entity color swap to match key color
+  set_variant=function(tbl,i)
+    if (i>1) then
+      tbl["color_swap_enable"]=true
+      tbl["color_swap"]={[key.colors[1][2]]=key.colors[i][2],[key.colors[1][3]]=key.colors[i][3]}
+    end
+    tbl.name=key.colors[i][1].." key"
   end,
 })
 

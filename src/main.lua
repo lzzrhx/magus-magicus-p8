@@ -53,7 +53,7 @@ flags={
   --unused_three=3,
   --unused_four=4,
   --unused_five=5,
-  --unused_six=6,
+  variant=6,
   entity=7,
 }
 
@@ -116,11 +116,7 @@ init={
   end,
 
   -- chest state
-  chest=function()
-    sel.chest.anim_frame={}
-    sel.chest.anim_playing=true
-    for itm in all(sel.chest.entity.content) do add(sel.chest.anim_frame,60) end
-  end,
+  chest=function() end,
 
   -- read state
   read=function() end,
@@ -150,7 +146,7 @@ update={
   -- chest state
   chest=function()
     if(sel.chest.entity.play_anim)sel.chest.entity:anim_step()
-    if(sel.chest.anim_frame[num]<=0)input.chest()
+    if(not chest.anim_playing)input.chest()
     end,
 
   -- read state
@@ -302,7 +298,7 @@ draw={
     cls()
     player:draw()
     sel.chest.entity:draw()
-    if (not sel.chest.anim_playing)draw.monochrome()
+    if (not chest.anim_playing)draw.monochrome()
     -- vars
     s_x="take items ❎"
     num=tbl_len(sel.chest.entity.content)
@@ -310,26 +306,27 @@ draw={
       for i=1,num do
         target={x=68-num*8+(i-1)*16,y=52}
         if (i==1 or sel.chest.anim_frame[i-1]<=0) then
+          itm=sel.chest.entity.content[i]
           if (sel.chest.anim_frame[i]>0) then
             if(i==num)sel.chest.entity.play_anim=false
             pal({0,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7})
             for j=0,10 do
               pos=sel.chest.entity:item_anim_pos(smoothstep(min(1,(1-(sel.chest.anim_frame[i]/60))+0.025*j)),target)
-              if(blink)spr(sel.chest.entity.content[i].sprite,pos.x,pos.y)
+              if(blink)spr(itm.sprite,pos.x,pos.y)
             end
             pal()
             sel.chest.anim_frame[i]-=1
             if (sel.chest.anim_frame[num]<=0) then 
-              sel.chest.anim_playing=false
+              chest.anim_playing=false
               draw.flash_n=2
             end
           else
-            if(not sel.chest.anim_playing or blink)wavy_spr(sel.chest.entity.content[i].sprite,target.x,target.y)
+            if(not chest.anim_playing or blink)itm:spr(itm.sprite,target.x,target.y+wavy())
           end
         end
       end
     end
-    if (not sel.chest.anim_playing) then
+    if (not chest.anim_playing) then
       wavy_print(s_x,64-str_width(s_x)*0.5,87,5)
       wavy_print(s_x,64-str_width(s_x)*0.5,86,6)
     end
@@ -486,9 +483,13 @@ inventory={
   num=0,
 
   -- add item to inventory (from world)
-  add=function(e)
-    tbl=tbl_merge_new({name=e:get_name(),sprite=e.sprite},e.item_data)
-    if(e.item_class==key.class)add(inventory.items,key:new(tbl))
+  add_item=function(e)
+    add(inventory.items,possession.new_from_entity(e))
+    inventory.num+=1
+  end,
+
+  add_possession=function(itm)
+    add(inventory.items,itm)
     inventory.num+=1
   end,
 
@@ -556,17 +557,10 @@ function interp(val,min,max)
 end
 
 -- wavy text
-function wavy_print(s,x,y,c,h)
-  for i=1,#s do
-    print(sub(s,i,i),x+i*4,y+sin(t()*1.25+i*0.06)*(h or 3),c)
-  end
-end
+function wavy_print(s,x,y,c,h) for i=1,#s do print(sub(s,i,i),x+i*4,y+wavy(i),c) end end
 
--- wavy sprite
-function wavy_spr(s,x,y,i,o,h)
-    spr(s,x,y+sin(t()*1.25+(i or 1)*(o or 0.06))*(h or 3))
-end
-
+-- wavy value
+function wavy(i,o,h) return sin(t()*1.25+(i or 1)*(o or 0.06))*(h or 3) end
 
 
 -------------------------------------------------------------------------------
