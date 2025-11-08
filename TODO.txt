@@ -1,7 +1,6 @@
 -------------------------------------------------------------------------------
 -- todo
 -------------------------------------------------------------------------------
--- stairs -> upper floors / lower floors (z-levels)
 -- map
 -- npc dialogue
 -- auto inventory sorting (by class and alphabet)

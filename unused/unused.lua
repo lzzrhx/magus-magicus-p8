@@ -29,3 +29,9 @@ function smoothstep(x) return x*x*(2-x*x) end
 
 -- quadratic rational smoothstep
 function smoothstep(x) return x*x/(2*x*x-2*x+1) end
+
+--[[companion_x,companion_y=x,y
+for i in all({-1,1}) do
+  if not collision(x+i,y) then companion_x=x+i break
+  elseif not collision(x,y+i) then companion_y=y+i break end
+end]]--

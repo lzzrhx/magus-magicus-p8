@@ -43,6 +43,8 @@ flag_entity=7
 
 -- vars
 state=nil -- game state
+z_level=0
+room=nil
 turn=1 -- turn number
 frame=0 -- animation frame (increments twice per second)
 prev_frame=0 -- previous animation frame (increments twice per second)
@@ -55,6 +57,10 @@ fade_action=nil
 cam_x=0 -- camera x position
 cam_y=0 -- camera y position
 cam_offset=4 -- camera scroll offset
+cam_x_min=0
+cam_y_min=0
+cam_x_diff=0
+cam_y_diff=0
 title_effect_num_points=96
 title_effect_colors={8,9,10,11,12,13,14,15}
 
@@ -69,8 +75,8 @@ option_disable_flash=false
 
 -- init
 function _init()
+  change_state(state_game)
   populate_map()
-  change_state(state_title)
 end
 
 -- update
@@ -232,17 +238,17 @@ draw={
       x=cos(t()/8+i/title_effect_num_points)*56
       y=sin(t()/8+i/title_effect_num_points)*16+sin(t()+i*(1/title_effect_num_points)*5)*4
       c=title_effect_colors[i%(#title_effect_colors)+1]
-      for j=1,3 do pset(64+x+j,42+y+j,c) end
+      for j=1,3 do pset(64+x+j,46+y+j,c) end
     end
     -- main title
     s_title="\014magus magicus"
-    print(s_title,68-str_width(s_title)*0.5,38,4)
-    print(s_title,68-str_width(s_title)*0.5,37,7)
+    print(s_title,68-str_width(s_title)*0.5,38+4,4)
+    print(s_title,68-str_width(s_title)*0.5,37+4,7)
     -- button legend
     s_btn_x="start game ❎"
     if (frame==0) then
-      print(s_btn_x,64-str_width(s_btn_x)*0.5,71,5)
-      print(s_btn_x,64-str_width(s_btn_x)*0.5,70,6)
+      print(s_btn_x,64-str_width(s_btn_x)*0.5,85,5)
+      print(s_btn_x,64-str_width(s_btn_x)*0.5,84,6)
     end
   end,
 
@@ -251,9 +257,20 @@ draw={
     -- draw map and entities
     cls()
     update_camera()
-    map(cam_x-1,cam_y-1,-8,-8,18,18-ui_h)
-    for e in all(entity.entities) do if (not e.collision) e:draw() end
-    for e in all(entity.entities) do if (e.collision) e:draw() end
+    if(room) then
+      if (room.z>0) then
+        pal_all(1)
+        map(cam_x-1-cam_x_diff,cam_y-1-cam_y_diff-(room.z),-8,-8,18,18-ui_h)
+        pal()
+      end
+      rectfill(max(0,(room.x0-cam_x+1)*8),max(0,(room.y0-cam_y+1)*8),min(128,(room.x1-cam_x)*8-1),min(128,(room.y1-cam_y)*8-1),0)
+      map(room.x0,room.y0,8*(room.x0-cam_x),8*(room.y0-cam_y),room.x1-room.x0+1,room.y1-room.y0+1)
+    else
+      map(cam_x-1,cam_y-1,-8,-8,18,18-ui_h)
+    end
+    for e in all(entity.entities) do if (not (e.parent_class==creature.class)) e:draw() end
+    for e in all(entity.entities) do if (e.parent_class==creature.class and not e.collision) e:draw() end
+    for e in all(entity.entities) do if (e.parent_class==creature.class and e.collision) e:draw() end
     -- vars
     hp_ratio=max(0,player.hp/player.max_hp)
     s_btn_z="menu 🅾️"
@@ -614,7 +631,7 @@ end
 
 -- iterate through all map tiles and find entities
 function populate_map()
-  for x=0,127 do for y=0,63 do
+  for x=0,127 do for y=0,67 do
       if(fget(mget(x,y),flag_entity))entity.entity_spawn(mget(x,y),x,y)
       if(mget(x,y)==sprite_void)mset(x,y,sprite_empty)
   end end
@@ -622,7 +639,7 @@ end
 
 -- check for collision
 function collision(x,y)
-  if(x<0 or x>127 or y<0 or y>127 or fget(mget(x,y),flag_collision))return true
+  if(x<0 or x==width or x==128 or y<0 or y==height or fget(mget(x,y),flag_collision))return true
   for e in all(entity.entities) do if (e.collision and e.x==x and e.y==y) return true end
   return false
 end
@@ -642,15 +659,12 @@ end
 function update_camera()
   x,y=cam_x,cam_y
   p_x,p_y=player.x,player.y
-  if (p_x-cam_x>15-cam_offset and cam_x<width-16) then 
-    x=p_x-15+cam_offset
-  elseif (p_x-cam_x<cam_offset and cam_x>0) then 
-    x=p_x-cam_offset
-  elseif (p_y-cam_y>15-cam_offset-ui_h and cam_y<height-16+ui_h) then 
-    y=p_y-15+cam_offset+ui_h
-  elseif (p_y-cam_y<cam_offset and cam_y>0) then 
-    y=p_y-cam_offset 
-  end
+  if (p_x-cam_x>15-cam_offset and (room or cam_x<width-16)) x=p_x-15+cam_offset
+  if (p_x-cam_x<cam_offset and cam_x>cam_x_min) x=p_x-cam_offset
+  if (p_y-cam_y>15-cam_offset-ui_h and cam_y<height-16+ui_h) y=p_y-15+cam_offset+ui_h
+  if (p_y-cam_y<cam_offset and cam_y>cam_y_min) y=p_y-cam_offset
+  if (room==nil and cam_x<cam_x_min)x=cam_x_min
+  if (room==nil and cam_y<cam_y_min)y=cam_y_min
   if (x~=cam_x or y ~= cam_y) then
     if (player.anim_frame>0) then
       camera((x-cam_x)*8+player.anim_x,(y-cam_y)*8+player.anim_y)
@@ -658,6 +672,10 @@ function update_camera()
       cam_x,cam_y=x,y
     end
   end
+end
+
+function change_room(new_room)
+  room=new_room
 end
 
 

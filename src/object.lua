@@ -93,12 +93,7 @@ entity=drawable:inherit({
       if (entity_data.class==player.class) then
         tbl_merge(player,tbl)
         companion_sprite=(rnd()>0.5 and sprite_companion_cat) or sprite_companion_dog
-        companion_x,companion_y=x,y
-        for i in all({-1,1}) do
-          if not collision(x+i,y) then companion_x=x+i break
-          elseif not collision(x,y+i) then companion_y=y+i break end
-        end
-        companion:new(tbl_merge_new({x=companion_x,y=companion_y,sprite=companion_sprite},data_entities[companion_sprite]))
+        companion:new(tbl_merge_new({x=x,y=y,sprite=companion_sprite},data_entities[companion_sprite]))
       else
         tbl_merge(tbl,entity_data)
         _ENV[tbl.class]:new(tbl)
@@ -271,7 +266,7 @@ creature=entity:inherit({
 
   -- try to move the creature to a given map coordinate
   move=function(self,x,y)
-    if (not collision(x,y) and x>=0 and x<width and y>=0 and y<height and (x~=0 or y~=0)) then
+    if (not collision(x,y) and x>=0 and x<128 and y>=0 and y<64 and (x~=0 or y~=0)) then
       self:play_anim(creature.anims.move,self.x-x,self.y-y)
       tbl_merge(self,{prev_x=self.x,prev_y=self.y,x=x,y=y})
       return true
@@ -503,6 +498,35 @@ door=entity:inherit({
 
 
 -------------------------------------------------------------------------------
+-- stairs
+-------------------------------------------------------------------------------
+stairs=entity:inherit({
+  -- static vars
+  class="stairs",
+  parent_class=entity.class,
+  interactable=false,
+  collision=false,
+
+  -- trigger action
+  trigger=function(self)
+    stair=nil
+    for e in all(data_floors.stairs) do if (e.x==player.x and e.y==player.y) stair=e break end
+    target_stair=data_floors.stairs[stair.target]
+    delta_z=(room and room.z) or 0
+    room=data_floors.rooms[target_stair.room]
+    delta_z=((room and room.z) or 0) - delta_z
+    cam_x_min,cam_y_min=(room and target_stair.x-player.x) or 0,(room and target_stair.y-player.y) or 0
+    cam_x_diff,cam_y_diff=target_stair.x-stair.x,target_stair.y-stair.y
+    player.x,player.y=target_stair.x,target_stair.y
+    cam_x,cam_y=cam_x+target_stair.x-stair.x,cam_y+target_stair.y-stair.y
+    msg.add("went "..(delta_z>0 and "up" or "down").." stairs")
+    draw.play_fade(change_room,room)
+  end,
+})
+
+
+
+-------------------------------------------------------------------------------
 -- sign
 -------------------------------------------------------------------------------
 sign=entity:inherit({
@@ -721,23 +745,4 @@ consumable=possession:inherit({
 equippable=possession:inherit({
   class="equippable",
   parent_class=possession.class,
-})
-
-
-
--------------------------------------------------------------------------------
--- stairs
--------------------------------------------------------------------------------
-stairs=entity:inherit({
-  -- static vars
-  class="stairs",
-  parent_class=entity.class,
-  interactable=false,
-  collision=false,
-
-  -- trigger action
-  trigger=function(self)
-    -- TODO: implement this
-    msg.add("went on stairs")
-  end,
 })
